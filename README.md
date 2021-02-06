@@ -1,4 +1,4 @@
-# Analyse de la surmortalité
+# Analyse de la surmortalité en France durant la crise sanitaire
 
 Carte interactive de la surmortalité durant la crise Covid 2020.
 
