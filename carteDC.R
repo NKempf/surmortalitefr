@@ -2,6 +2,11 @@
 #                 Interactive map of excess mortality in France during Covid crisis               #
 #-------------------------------------------------------------------------------------------------#
 
+# TODO
+# 1. Solutionner le problème de la 53eme semaine
+# 2. Prolonger la tendance jusqu'au dernier jours voir une à deux semaine après.
+
+
 # Packages
 library(sf) # spatial object
 library(tidyverse) # tidy data
@@ -22,11 +27,16 @@ reg <- st_read("maps/region/regions-20180101.shp",options = "ENCODING=UTF-8") %>
   mutate(label = paste0(nom,"(",code_insee,")")) %>%
   select(code_insee,label)
 
-# Departments map (https://www.data.gouv.fr/fr/datasets/contours-des-departements-francais-issus-d-openstreetmap/)
-dep <- st_read("maps/departments/departements-20180101.shp",options = "ENCODING=UTF-8") %>% 
+# Departments map (https://www.data.gouv.fr/fr/datasets/contours-des-departements-francais-issus-d-openstreetmap/,
+#  https://public.opendatasoft.com/explore/dataset/contours-geographiques-des-departements-2019/export/?flg=fr)
+# dep <- st_read("maps/departments/departements-20180101.shp",options = "ENCODING=UTF-8") %>% 
+dep <- st_read("maps/departments/contours-geographiques-des-departements-2019/contours-geographiques-des-departements-2019.shp",options = "ENCODING=UTF-8") %>% 
   st_simplify(preserveTopology = T,0.008) %>%  # simplify geometry
   st_transform(4326) %>% # new coordinate system
-  mutate(label = paste0(nom,"(",code_insee,")")) 
+  mutate(label = paste0(nom_dep,"(",insee_dep,")")) %>% 
+  select(code_insee=insee_dep,label)
+
+# Aire d'attraction des villes (https://www.insee.fr/fr/information/4803954)
 
 # death daily data (https://www.insee.fr/fr/statistiques/4487988)
 death <- bind_rows(
