@@ -2,11 +2,6 @@
 #                 Interactive map of excess mortality in France during Covid crisis               #
 #-------------------------------------------------------------------------------------------------#
 
-# TODO
-# 1. Solutionner le problème de la 53eme semaine
-# 2. Prolonger la tendance jusqu'au dernier jours voir une à deux semaine après.
-
-
 # Packages
 library(sf) # spatial object
 library(tidyverse) # tidy data
@@ -16,6 +11,7 @@ library(shiny) # App
 library(leaflet) # Interactive map
 library(RColorBrewer) # Color palette
 library(htmltools)
+library(forecast) # Time series
 
 # I. Import and tidy data
 #------------------------------------------------------------------------------------------------
@@ -49,7 +45,8 @@ death <- bind_rows(
 # II. Statistical computation
 #------------------------------------------------------------------------------------------------
 death_dep <- death %>% 
-  mutate(week_iso = isoweek(date_dc)) %>% 
+  mutate(week_iso = isoweek(date_dc)) %>%
+  filter(week_iso != 53) %>% 
   group_by(DEPDEC, ADEC, week_iso) %>% 
   summarise(total_dc = n()) %>% # weekly death by departments
   ungroup() %>% 
@@ -63,12 +60,42 @@ death_dep <- death %>%
   select(-`2018`,-`2019`) %>% 
   gather(key = an, value = death, -DEPDEC,-week_iso,-death_ref) %>% 
   filter(!is.na(death_ref) & !is.na(death)) %>%   
-  mutate(surmortalite = 100* death / death_ref, # Excess mortality
-         week_first_day = floor_date(ymd(paste0(an,"-01-01")) + weeks(week_iso), "weeks",week_start = 1),
-         week_first_day.f = factor(format(week_first_day,"%d %b %y"),levels = unique(format(week_first_day,"%d %b %y")))
+  mutate(surmortalite = 100* death / death_ref # Excess mortality
   ) %>% 
   ungroup() 
- 
+
+# Forcasting excess mortality for 6 weeks
+death_forecast <- lapply(unique(death_dep$DEPDEC),function(x){
+  df <- death_dep %>% 
+    filter(DEPDEC == x & !(an == "2021" & week_iso > 2))
+  
+  lynx_tbats <- df$surmortalite %>% tbats()
+  lynx_tbats_f <- predict(lynx_tbats %>% forecast())
+  
+  df2 <- data.frame(
+    DEPDEC = x,
+    week_iso = 4:9,
+    surmortalite = lynx_tbats_f$mean[1:6]
+  )
+  return(df2)
+})
+
+death_forecast <- bind_rows(death_forecast) %>% 
+  mutate(an = "2021",
+         prevision = "y")
+
+
+death_dep <- death_dep %>% 
+  filter(!(an == "2021" & week_iso > 3)) %>% 
+  mutate(prevision = "n") %>% 
+  select(colnames(death_forecast)) %>% 
+  bind_rows(death_forecast) %>% # Add forecast to real data
+  mutate(
+    week_first_day = floor_date(ymd(paste0(an,"-01-01")) + weeks(week_iso), "weeks",week_start = 1),
+    week_first_day.f = factor(format(week_first_day,"%d %b %y"),levels = unique(format(week_first_day,"%d %b %y")))
+  )
+  
+
 # II. Application Shiny
 #-----------------------------------------------------------------------------------------------------------------
 
@@ -96,16 +123,18 @@ ui <- bootstrapPage(
 server <- function(input, output) {
   # Données département filtrées à partir du slider input
   filteredData <- reactive({
-
     dep %>%
       left_join(death_dep %>% 
                   filter(week_first_day == input$animation) %>%
                   ungroup() %>%
-                  select(codegeo=DEPDEC,surmortalite,week_first_day.f,death,death_ref), by=c("code_insee" = "codegeo") ) %>%
+                  select(codegeo=DEPDEC,surmortalite,week_first_day.f,prevision), by=c("code_insee" = "codegeo") )  %>%
       mutate(label_surmortalite = paste0("Area : ",label,"<br/>Date : ",week_first_day.f ,
                                          "<br/>Excess mortality (base 100) : ", round(surmortalite,1),
-                                         "<br/>Smoot number weekly death : ",round(death,0),
-                                         "<br/>Average number of death 2018-2019 : ",round(death_ref,0)))
+                                         "<br/>Forecast (y= Yes, n = No) : ", prevision
+                                         # "<br/>Smoot number weekly death : ",round(death,0),
+                                         # "<br/>Average number of death 2018-2019 : ",round(death_ref,0)
+                                         )
+             )
   })
   
   output$mapAct<-renderLeaflet({
